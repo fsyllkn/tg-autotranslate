@@ -298,6 +298,7 @@ async def handle_command(event):
                 "- `.fy-add,成员id,源语言,目标语言` 群聊-为指定成员开启方向翻译；\n"
                 "- `.fy-del,成员id` 群组-关闭翻译指定成员消息功能；\n"
                 "- `.fy-clear` 一键关闭所有翻译规则；\n"
+                "- `.fy-list` 查看用户开启翻译功能的规则；\n"
                 "- `.fy-help` 查看指令与用法说明。"
             )
             await send_ephemeral_reply(event, help_msg)
