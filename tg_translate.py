@@ -76,25 +76,23 @@ other_default_rule = str(config.get("other_default_rule", "en,zh"))
 translate_rules = {str(k): v for k, v in config.get("translate_rules", {}).items()} if "translate_rules" in config else {}
 
 # ========== 热加载定时器 ==========
-def start_config_hot_reload(interval=60):
-    def reload_loop():
-        last_mtime = None
-        config_path = os.path.abspath('config.yaml')
-        while True:
-            try:
-                if os.path.exists(config_path):
-                    mtime = os.path.getmtime(config_path)
-                    if last_mtime is None:
-                        last_mtime = mtime
-                    elif mtime != last_mtime:
-                        reload_config()
-                        logging.info("[HOT-RELOAD] config.yaml 检测到变更，已自动热加载")
-                        last_mtime = mtime
-            except Exception as e:
-                logging.error(f"[HOT-RELOAD] config.yaml 热加载检测失败: {e}")
-            time.sleep(interval)
-    t = threading.Thread(target=reload_loop, daemon=True)
-    t.start()
+async def config_hot_reload_loop(interval=60):
+    last_mtime = None
+    config_path = os.path.abspath('config.yaml')
+    logging.info("[HOT-RELOAD] 异步热加载任务已启动。")
+    while True:
+        try:
+            if os.path.exists(config_path):
+                mtime = os.path.getmtime(config_path)
+                if last_mtime is None:
+                    last_mtime = mtime
+                elif mtime != last_mtime:
+                    reload_config()
+                    logging.info("[HOT-RELOAD] config.yaml 检测到变更，已自动热加载")
+                    last_mtime = mtime
+        except Exception as e:
+            logging.error(f"[HOT-RELOAD] config.yaml 热加载检测失败: {e}")
+        await asyncio.sleep(interval)
 
 def parse_rule_pair(rule_key, fallback):
     """parse rule pair, 支持一对多、多对多语种，返回([src_list],[tgt_list])"""
@@ -596,11 +594,11 @@ def handle_async_exception(loop, context):
 
 if __name__ == "__main__":
     print("配置和规则加载完毕，主程序入口。")
-    # 启动热加载定时器（每60秒自动reload一次config.yaml）
-    start_config_hot_reload(interval=60)
     try:
         loop = asyncio.get_event_loop()
         loop.set_exception_handler(handle_async_exception)
+        # 启动异步热加载任务
+        loop.create_task(config_hot_reload_loop(interval=60))
         client.start()  # 会自动检测 session，不存在或无效则弹出登录提示（二维码或手机号认证）
         print("Telegram 客户端已启动，等待消息...")
         client.run_until_disconnected()
