@@ -1,5 +1,8 @@
 # tg-autotranslate
+借助GPT融合了linux.do论坛里的两个大佬分享的脚本，用于自学自用，请轻喷~
+`https://linux.do/t/topic/18308` 和 `https://linux.do/t/topic/9582`
 把py文件和yaml配置文件放同目录，根据说明，填写完整，运行py脚本即可
+使用前可能需要安装依赖：`pip install aiohttp telethon` ,如果你本机还缺其他依赖，自行安装即可。
 
 指令帮助：
 - .fy-on 开启私聊和群聊中自己默认中译英；
