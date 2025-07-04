@@ -28,6 +28,7 @@ def load_yaml_config(path):
 
 def reload_config():
     global config, self_default_rule, other_default_rule, translate_rules, ignore_words
+    global DEEPLX_FAIL_THRESHOLD, OPENAI_FAIL_THRESHOLD
     config = load_yaml_config('config.yaml')
     if not config:
         msg = "配置文件加载失败或格式错误，请检查config.yaml！"
@@ -38,6 +39,9 @@ def reload_config():
     other_default_rule = str(config.get("other_default_rule", "en,zh"))
     translate_rules = {str(k): v for k, v in config.get("translate_rules", {}).items()} if "translate_rules" in config else {}
     ignore_words = set(config.get('ignore_words', []))
+    # 失败阈值参数支持热加载
+    DEEPLX_FAIL_THRESHOLD = int(config.get('deeplx_fail_threshold', 3))
+    OPENAI_FAIL_THRESHOLD = int(config.get('openai_fail_threshold', 3))
     # 重新初始化openai_client和其他依赖配置
     try:
         from openai import OpenAI
@@ -70,6 +74,10 @@ config = load_yaml_config('config.yaml')
 rules_path = 'dynamic_rules.json'
 rules = load_json_config(rules_path)
 
+# ========== 失败阈值参数支持配置文件自定义 ==========
+DEEPLX_FAIL_THRESHOLD = int(config.get('deeplx_fail_threshold', 3))
+OPENAI_FAIL_THRESHOLD = int(config.get('openai_fail_threshold', 3))
+
 # ======== 加载翻译方向规则配置 ==========
 self_default_rule = str(config.get("self_default_rule", "zh,en"))
 other_default_rule = str(config.get("other_default_rule", "en,zh"))
@@ -92,6 +100,76 @@ async def config_hot_reload_loop(interval=60):
                     last_mtime = mtime
         except Exception as e:
             logging.error(f"[HOT-RELOAD] config.yaml 热加载检测失败: {e}")
+        await asyncio.sleep(interval)
+
+# ========== 禁用接口定期健康检查与自动恢复 ==========
+async def disabled_engine_health_check_loop(interval=300):
+    import random
+    while True:
+        # Deeplx禁用检测
+        try:
+            if deeplx_disabled:
+                deeplx_cfg = config.get('deeplx', {})
+                base_urls = deeplx_cfg.get('base_urls', [])
+                for idx in list(deeplx_disabled):
+                    if idx >= len(base_urls):
+                        continue
+                    base_url = base_urls[idx]
+                    payload = {
+                        "text": "hello",
+                        "source_lang": "en",
+                        "target_lang": "zh"
+                    }
+                    async with aiohttp.ClientSession() as session:
+                        try:
+                            async with session.post(base_url, json=payload, timeout=8) as resp:
+                                if resp.status == 200:
+                                    data = await resp.json()
+                                    if data.get('code') == 200:
+                                        deeplx_disabled.remove(idx)
+                                        deeplx_fail_count[idx] = 0
+                                        logging.info(f"[HEALTH] Deeplx接口已恢复: 第{idx+1}个 {base_url}")
+                        except Exception:
+                            pass
+        except Exception as e:
+            logging.warning(f"[HEALTH] Deeplx禁用检测异常: {e}")
+
+        # OpenAI禁用检测
+        try:
+            if openai_disabled:
+                openai_cfg = config.get('openai', {})
+                urls = openai_cfg.get('base_urls', [])
+                keys = openai_cfg.get('api_keys', [])
+                min_count = min(len(urls), len(keys))
+                for idx in list(openai_disabled):
+                    if idx >= min_count:
+                        continue
+                    try:
+                        from openai import OpenAI
+                        client = OpenAI(api_key=keys[idx], base_url=urls[idx])
+                        def do_translate():
+                            try:
+                                response = client.chat.completions.create(
+                                    model="gpt-4o",
+                                    messages=[
+                                        {"role": "system", "content": "You are a translation engine, only returning translated answers."},
+                                        {"role": "user", "content": "hello"}
+                                    ]
+                                )
+                                return response.choices[0].message.content
+                            except Exception:
+                                return None
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        result = await loop.run_in_executor(None, do_translate)
+                        if result:
+                            openai_disabled.remove(idx)
+                            openai_fail_count[idx] = 0
+                            logging.info(f"[HEALTH] OpenAI接口已恢复: 第{idx+1}个 {urls[idx]}，key序号: {idx}")
+                    except Exception:
+                        pass
+        except Exception as e:
+            logging.warning(f"[HEALTH] OpenAI禁用检测异常: {e}")
         await asyncio.sleep(interval)
 
 def parse_rule_pair(rule_key, fallback):
@@ -464,47 +542,35 @@ openai_client = OpenAI(
     base_url=config['openai']['base_urls'][0] if config['openai'].get('base_urls') else ""
 )
 
-async def translate_with_openai(text, target_language):
-    """顺序对应轮询 OpenAI base_urls 与 api_keys"""
-    import asyncio
-    openai_cfg = config['openai']
-    urls = openai_cfg.get('base_urls', [])
-    keys = openai_cfg.get('api_keys', [])
-    try:
-        min_count = min(len(urls), len(keys))
-        if min_count == 0:
-            raise Exception("openai base_urls 或 api_keys 未配置")
-        loop = asyncio.get_event_loop()
-        for i in range(min_count):
-            try:
-                client = OpenAI(api_key=keys[i], base_url=urls[i])
-                def do_translate():
-                    try:
-                        response = client.chat.completions.create(
-                            model="gpt-4o",
-                            messages=[
-                                {"role": "system", "content": "You are a translation engine, only returning translated answers."},
-                                {"role": "user", "content": f"Translate the text to {target_language} please do not explain my original text, do not explain the translation results, Do not explain the context.:\n{text}"}
-                            ]
-                        )
-                        return response.choices[0].message.content
-                    except Exception as e:
-                        logging.error(f"OpenAI do_translate异常: {e}", exc_info=True)
-                        raise
-                result = await loop.run_in_executor(None, do_translate)
-                return result
-            except Exception as e:
-                logging.warning(f"OpenAI接口 SDK {urls[i]}+key[{i}]调用失败: {e}", exc_info=True)
-                continue
-        raise Exception("所有OpenAI接口均不可用")
-    except Exception as e:
-        logging.warning(f"OpenAI调用失败: {e}", exc_info=True)
-        raise Exception(f"translate_with_openai 失败: {e}")
+# ========== Deeplx/OpenAI 顺序轮询+禁用+健康检查机制 ==========
+from collections import defaultdict
+
+deeplx_fail_count = defaultdict(int)
+deeplx_disabled = set()
+current_deeplx_idx = 0
+
+openai_fail_count = defaultdict(int)
+openai_disabled = set()
+current_openai_idx = 0
+
+DEEPLX_FAIL_THRESHOLD = int(config.get('deeplx_fail_threshold', 3))
+OPENAI_FAIL_THRESHOLD = int(config.get('openai_fail_threshold', 3))
 
 async def translate_with_deeplx(text, source_lang, target_lang):
+    global current_deeplx_idx
     deeplx_cfg = config['deeplx']
     base_urls = deeplx_cfg.get('base_urls', [])
-    for base_url in base_urls:
+    n = len(base_urls)
+    if n == 0:
+        raise Exception("deeplx base_urls 未配置")
+    tried = 0
+    while tried < n:
+        idx = current_deeplx_idx % n
+        current_deeplx_idx = (current_deeplx_idx + 1) % n
+        if idx in deeplx_disabled:
+            tried += 1
+            continue
+        base_url = base_urls[idx]
         try:
             payload = {
                 "text": text,
@@ -517,16 +583,156 @@ async def translate_with_deeplx(text, source_lang, target_lang):
                         if resp.status == 200:
                             data = await resp.json()
                             if data.get('code') == 200:
+                                deeplx_fail_count[idx] = 0  # 成功清零
                                 return data['data']
                             else:
+                                deeplx_fail_count[idx] += 1
                                 logging.warning(f"Deeplx接口 {base_url} 返回异常: {data}")
                         else:
+                            deeplx_fail_count[idx] += 1
                             logging.warning(f"Deeplx接口 {base_url} 失败，状态码: {resp.status}")
                 except Exception as e:
+                    deeplx_fail_count[idx] += 1
                     logging.error(f"Deeplx接口 {base_url} 网络请求异常: {e}", exc_info=True)
         except Exception as e:
+            deeplx_fail_count[idx] += 1
             logging.warning(f"Deeplx接口 {base_url} 失败，尝试下一个: {e}", exc_info=True)
-    raise Exception("所有Deeplx接口均不可用")
+        # 超阈值禁用
+        if deeplx_fail_count[idx] >= DEEPLX_FAIL_THRESHOLD:
+            deeplx_disabled.add(idx)
+            logging.error(f"已禁用第{idx+1}个deeplx接口: {base_url}，连续失败{DEEPLX_FAIL_THRESHOLD}次，请及时检查或更新！")
+            # 启动健康检查任务（如未启动）
+            if not getattr(translate_with_deeplx, "_health_check_started", False):
+                loop = asyncio.get_event_loop()
+                loop.create_task(disabled_engine_health_check_loop())
+                translate_with_deeplx._health_check_started = True
+        tried += 1
+    raise Exception("所有Deeplx接口均已禁用或不可用")
+
+async def translate_with_openai(text, target_language):
+    global current_openai_idx
+    import asyncio
+    openai_cfg = config['openai']
+    urls = openai_cfg.get('base_urls', [])
+    keys = openai_cfg.get('api_keys', [])
+    min_count = min(len(urls), len(keys))
+    if min_count == 0:
+        raise Exception("openai base_urls 或 api_keys 未配置")
+    tried = 0
+    loop = asyncio.get_event_loop()
+    while tried < min_count:
+        idx = current_openai_idx % min_count
+        current_openai_idx = (current_openai_idx + 1) % min_count
+        if idx in openai_disabled:
+            tried += 1
+            continue
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=keys[idx], base_url=urls[idx])
+            def do_translate():
+                try:
+                    models = openai_cfg.get('models', ['gpt-4o'])
+                    model_name = models[0] if models else 'gpt-4o'
+                    response = client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": "You are a translation engine, only returning translated answers."},
+                            {"role": "user", "content": f"Translate the text to {target_language} please do not explain my original text, do not explain the translation results, Do not explain the context.:\n{text}"}
+                        ]
+                    )
+                    return response.choices[0].message.content
+                except Exception as e:
+                    logging.error(f"OpenAI do_translate异常: {e}", exc_info=True)
+                    raise
+            result = await loop.run_in_executor(None, do_translate)
+            openai_fail_count[idx] = 0  # 成功清零
+            return result
+        except Exception as e:
+            openai_fail_count[idx] += 1
+            logging.warning(f"OpenAI接口 SDK {urls[idx]}+key[{idx}]调用失败: {e}", exc_info=True)
+            if openai_fail_count[idx] >= OPENAI_FAIL_THRESHOLD:
+                openai_disabled.add(idx)
+                logging.error(f"已禁用第{idx+1}个OpenAI接口: {urls[idx]}，key序号: {idx}，连续失败{OPENAI_FAIL_THRESHOLD}次，请及时检查或更新！")
+                # 启动健康检查任务（如未启动）
+                if not getattr(translate_with_openai, "_health_check_started", False):
+                    loop = asyncio.get_event_loop()
+                    loop.create_task(disabled_engine_health_check_loop())
+                    translate_with_openai._health_check_started = True
+            tried += 1
+            continue
+    raise Exception("所有OpenAI接口均已禁用或不可用")
+
+# ========== 禁用接口定期健康检查与自动恢复 ==========
+async def disabled_engine_health_check_loop(interval=600):
+    import random
+    while deeplx_disabled or openai_disabled:
+        # Deeplx禁用检测
+        try:
+            if deeplx_disabled:
+                deeplx_cfg = config.get('deeplx', {})
+                base_urls = deeplx_cfg.get('base_urls', [])
+                for idx in list(deeplx_disabled):
+                    if idx >= len(base_urls):
+                        continue
+                    base_url = base_urls[idx]
+                    payload = {
+                        "text": "hello",
+                        "source_lang": "en",
+                        "target_lang": "zh"
+                    }
+                    async with aiohttp.ClientSession() as session:
+                        try:
+                            async with session.post(base_url, json=payload, timeout=8) as resp:
+                                if resp.status == 200:
+                                    data = await resp.json()
+                                    if data.get('code') == 200:
+                                        deeplx_disabled.remove(idx)
+                                        deeplx_fail_count[idx] = 0
+                                        logging.info(f"[HEALTH] Deeplx接口已恢复: 第{idx+1}个 {base_url}")
+                        except Exception:
+                            pass
+        except Exception as e:
+            logging.warning(f"[HEALTH] Deeplx禁用检测异常: {e}")
+
+        # OpenAI禁用检测
+        try:
+            if openai_disabled:
+                openai_cfg = config.get('openai', {})
+                urls = openai_cfg.get('base_urls', [])
+                keys = openai_cfg.get('api_keys', [])
+                min_count = min(len(urls), len(keys))
+                for idx in list(openai_disabled):
+                    if idx >= min_count:
+                        continue
+                    try:
+                        from openai import OpenAI
+                        client = OpenAI(api_key=keys[idx], base_url=urls[idx])
+                        def do_translate():
+                            try:
+                                models = openai_cfg.get('models', ['gpt-4o'])
+                                model_name = models[0] if models else 'gpt-4o'
+                                response = client.chat.completions.create(
+                                    model=model_name,
+                                    messages=[
+                                        {"role": "system", "content": "You are a translation engine, only returning translated answers."},
+                                        {"role": "user", "content": "hello"}
+                                    ]
+                                )
+                                return response.choices[0].message.content
+                            except Exception:
+                                return None
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        result = await loop.run_in_executor(None, do_translate)
+                        if result:
+                            openai_disabled.remove(idx)
+                            openai_fail_count[idx] = 0
+                            logging.info(f"[HEALTH] OpenAI接口已恢复: 第{idx+1}个 {urls[idx]}，key序号: {idx}")
+                    except Exception:
+                        pass
+        except Exception as e:
+            logging.warning(f"[HEALTH] OpenAI禁用检测异常: {e}")
+        await asyncio.sleep(interval)
 
 async def translate_text(text, source_lang, target_langs, prefer=None):
     # 主备引擎参数
@@ -686,31 +892,79 @@ async def handle_message(event):
         "no": "挪威语",
         # 可根据需要继续扩展
     }
-    # 引入langdetect做主语言识别
-    try:
-        from langdetect import detect
-        detected_lang = detect(text)
-    except Exception:
-        detected_lang = None
+    # 新增：字符区间法语言识别，完全替换 langdetect
+    def detect_language(text):
+        pure_text = remove_emoji_and_punct(text)
+        # 中文
+        if re.search(r'[\u4e00-\u9fff]', pure_text):
+            return 'zh'
+        # 俄语
+        elif re.search(r'[\u0400-\u04FF]', pure_text):
+            return 'ru'
+        # 日语
+        elif re.search(r'[\u3040-\u30FF]', pure_text):
+            return 'ja'
+        # 韩语
+        elif re.search(r'[\uAC00-\uD7AF]', pure_text):
+            return 'ko'
+        # 阿拉伯语
+        elif re.search(r'[\u0600-\u06FF]', pure_text):
+            return 'ar'
+        # 拉丁语系（含所有拉丁字母及变体，排除特殊区间）
+        elif re.search(r'[A-Za-zÀ-ÿ]', pure_text) and not re.search(r'[\u4e00-\u9fff\u0400-\u04FF\u3040-\u30FF\uAC00-\uD7AF\u0600-\u06FF]', pure_text):
+            return 'latin'
+        else:
+            return None
+
+    detected_lang = detect_language(text)
+
+    def normalize_punct(s):
+        # 全角转半角（严格一一对应，长度一致）
+        full = "，。！？：；“”‘’（）【】《》、．·？！（）"
+        half = ",.!?:;\"\"''()[]<>/,..?!()"  # 与full等长
+        table = str.maketrans(full, half)
+        s = s.translate(table)
+        # 统一空格
+        s = s.replace('\u3000', ' ')
+        return s
 
     for rule in rule_list:
         source_langs = rule.get('source_langs', ['en'])
         target_langs = rule.get('target_langs', ['zh'])
         # 智能识别源语言，找到适合本条消息的语言组
         active_source = None
+        # 仅用于判断的纯文本（去除emoji和所有标点符号）
+        pure_text = remove_emoji_and_punct(text)
         logging.info(f"[DEBUG] 检测到的源语言: detected_lang={detected_lang}, source_langs={source_langs}")
         for sl in source_langs:
-            if sl == "zh" and contains_chinese(text):
+            if sl == "zh" and contains_chinese(pure_text):
+                active_source = sl
+                break
+            # 支持拉丁语系泛匹配：source_langs 里有 latin 时，所有拉丁语种都可触发
+            elif detected_lang == "latin" and (sl.lower() == "latin" or sl.lower() in ["fr", "it", "de", "es", "pt", "nl", "sv", "fi", "da", "no", "pl", "cs", "ro", "sk", "sl", "hr", "hu", "tr", "bg", "el", "lt", "lv", "et", "mt", "ga", "rm"]):
                 active_source = sl
                 break
             elif sl != "zh" and detected_lang and sl.lower() == detected_lang.lower():
                 active_source = sl
                 break
-        # fallback: 若detect失败且source_langs只有en且文本明显为非中文，则假定为en
+        # 优化fallback: langdetect失败时，优先用正则判断是否为纯英文或纯中文，并提升英文判定准确率
         if not active_source and (not detected_lang or detected_lang == "None"):
-            if len(source_langs) == 1 and source_langs[0].lower() == "en" and contains_non_chinese(text):
-                active_source = "en"
-                logging.info(f"[DEBUG] fallback: contains_non_chinese命中，假定active_source为'en'")
+            # 只含汉字
+            if re.fullmatch(r'[\u4e00-\u9fff\s]*', pure_text):
+                if "zh" in source_langs:
+                    active_source = "zh"
+                    logging.info(f"[DEBUG] fallback: 纯汉字正则命中，假定active_source为'zh'")
+            # 只含拉丁字母、空格，且字母占比>80%，且 source_langs 只包含 en 时才判为英文
+            elif re.fullmatch(r'[A-Za-z\s]*', pure_text) and pure_text:
+                letter_count = sum(1 for c in pure_text if c.isalpha())
+                ratio = letter_count / len(pure_text.replace(" ", "")) if pure_text.replace(" ", "") else 0
+                if ratio > 0.8 and len(source_langs) == 1 and source_langs[0].lower() == "en":
+                    active_source = "en"
+                    logging.info(f"[DEBUG] fallback: 纯英文正则+字母占比命中，且仅有en，假定active_source为'en'")
+            # 其它情况不再 fallback 为英文，避免多语种规则误判
+        if not active_source:
+            logging.info(f"[DEBUG] 未找到匹配的源语言: detected_lang={detected_lang}, source_langs={source_langs}")
+            continue
         if not active_source:
             logging.info(f"[DEBUG] 未找到匹配的源语言: detected_lang={detected_lang}, source_langs={source_langs}")
             continue
@@ -762,6 +1016,7 @@ if __name__ == "__main__":
         loop.set_exception_handler(handle_async_exception)
         # 启动异步热加载任务
         loop.create_task(config_hot_reload_loop(interval=60))
+        # 不再启动禁用接口健康检查任务
         client.start()  # 会自动检测 session，不存在或无效则弹出登录提示（二维码或手机号认证）
         print("Telegram 客户端已启动，等待消息...")
         client.run_until_disconnected()
