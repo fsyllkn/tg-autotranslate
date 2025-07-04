@@ -749,6 +749,13 @@ def handle_async_exception(loop, context):
     logging.error(f"Asyncio全局异常: {msg}")
 
 if __name__ == "__main__":
+    # 首次加载配置，若格式错误则立即报错并退出
+    config = load_yaml_config('config.yaml')
+    if not config:
+        msg = "配置文件加载失败或格式错误，请检查config.yaml！"
+        print(msg)
+        logging.error(msg)
+        sys.exit(1)
     print("配置和规则加载完毕，主程序入口。")
     try:
         loop = asyncio.get_event_loop()
