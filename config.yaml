@@ -23,7 +23,13 @@ openai:
     - "sk-111111111111"
     - "sk-222222222222"
     - "sk-333333333333"
-
+  models:
+    - "gpt-4o"
+    - "deepseek-r1-0528"
+    - "gemini-2.0-flash"
+# 引擎顺序轮询，调用失效次数达到阈值后（留空默认3次）禁用
+deeplx_fail_threshold: 2
+openai_fail_threshold: 2
 # 新增：默认翻译方向规则，在不加规则的指令下，使用默认翻译规则
 self_default_rule: "zh,en"        # 如使用编号，等同于下面规则池编号，等价于 "zh,en"，推荐直接填规则
 other_default_rule: "en,zh"       # 如使用编号，等同于下面规则池编号，等价于 "en,zh"
