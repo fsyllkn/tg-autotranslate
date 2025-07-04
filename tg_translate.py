@@ -327,12 +327,23 @@ async def handle_command(event):
             # 支持 .fy-on或 .fy-on,src,tgt/方向 任意场景，仅操作self
             argstr = ",".join(args) if args else ""
             rule_key = argstr if argstr else self_default_rule
-            src, tgt = parse_rule_pair(rule_key, self_default_rule)
-            set_rule(chat_id, self_id, {"source_langs": src, "target_langs": tgt})
-            await send_ephemeral_reply(
-                event,
-                f"已为 [自己] 在本{'群组' if is_group else '私聊'}开启翻译：{src} → {tgt}"
-            )
+            src_list, tgt_list = parse_rule_pair(rule_key, self_default_rule)
+            saved_rules = []
+            for src in src_list:
+                filtered_tgts = [tgt for tgt in tgt_list if tgt != src]
+                if filtered_tgts:
+                    set_rule(chat_id, self_id, {"source_langs": [src], "target_langs": filtered_tgts})
+                    saved_rules.append(f"{src}→{'|'.join(filtered_tgts)}")
+            if saved_rules:
+                await send_ephemeral_reply(
+                    event,
+                    f"已为 [自己] 在本{'群组' if is_group else '私聊'}开启翻译：\n" + "\n".join(saved_rules)
+                )
+            else:
+                await send_ephemeral_reply(
+                    event,
+                    "源语言和目标语言完全重叠，无需翻译，规则未保存。"
+                )
             return
 
         ## ========= .fy-off 关闭自身翻译 ========= ##
@@ -358,10 +369,20 @@ async def handle_command(event):
                     else:
                         await send_ephemeral_reply(event, "参数格式: .fy-add,成员id 或 .fy-add,成员id,源,目标")
                         return
-                    set_rule(chat_id, mem_id, {"source_langs": src, "target_langs": tgt})
-                    await send_ephemeral_reply(
-                        event, f"已为群组成员{mem_id}启用翻译：{src} → {tgt}"
-                    )
+                    saved_rules = []
+                    for s in src:
+                        filtered_tgts = [t for t in tgt if t != s]
+                        if filtered_tgts:
+                            set_rule(chat_id, mem_id, {"source_langs": [s], "target_langs": filtered_tgts})
+                            saved_rules.append(f"{s}→{'|'.join(filtered_tgts)}")
+                    if saved_rules:
+                        await send_ephemeral_reply(
+                            event, f"已为群组成员{mem_id}启用翻译：\n" + "\n".join(saved_rules)
+                        )
+                    else:
+                        await send_ephemeral_reply(
+                            event, f"源语言和目标语言完全重叠，无需翻译，规则未保存。"
+                        )
                     return
                 else:
                     await send_ephemeral_reply(event, "请指定成员id作为第一个参数，如.fy-add,12345,zh,en")
@@ -377,10 +398,20 @@ async def handle_command(event):
                 else:
                     await send_ephemeral_reply(event, "参数格式: .fy-add 或 .fy-add,源,目标")
                     return
-                set_rule(chat_id, chat_id, {"source_langs": src, "target_langs": tgt})
-                await send_ephemeral_reply(
-                    event, f"已为对方（此私聊）启用翻译：{src} → {tgt}"
-                )
+                saved_rules = []
+                for s in src:
+                    filtered_tgts = [t for t in tgt if t != s]
+                    if filtered_tgts:
+                        set_rule(chat_id, chat_id, {"source_langs": [s], "target_langs": filtered_tgts})
+                        saved_rules.append(f"{s}→{'|'.join(filtered_tgts)}")
+                if saved_rules:
+                    await send_ephemeral_reply(
+                        event, f"已为对方（此私聊）启用翻译：\n" + "\n".join(saved_rules)
+                    )
+                else:
+                    await send_ephemeral_reply(
+                        event, "源语言和目标语言完全重叠，无需翻译，规则未保存。"
+                    )
                 return
             else:
                 await send_ephemeral_reply(event, "请在私聊或群聊中使用 .fy-add")
@@ -667,14 +698,21 @@ async def handle_message(event):
         target_langs = rule.get('target_langs', ['zh'])
         # 智能识别源语言，找到适合本条消息的语言组
         active_source = None
+        logging.info(f"[DEBUG] 检测到的源语言: detected_lang={detected_lang}, source_langs={source_langs}")
         for sl in source_langs:
             if sl == "zh" and contains_chinese(text):
                 active_source = sl
                 break
-            elif sl != "zh" and detected_lang and sl == detected_lang:
+            elif sl != "zh" and detected_lang and sl.lower() == detected_lang.lower():
                 active_source = sl
                 break
+        # fallback: 若detect失败且source_langs只有en且文本明显为非中文，则假定为en
+        if not active_source and (not detected_lang or detected_lang == "None"):
+            if len(source_langs) == 1 and source_langs[0].lower() == "en" and contains_non_chinese(text):
+                active_source = "en"
+                logging.info(f"[DEBUG] fallback: contains_non_chinese命中，假定active_source为'en'")
         if not active_source:
+            logging.info(f"[DEBUG] 未找到匹配的源语言: detected_lang={detected_lang}, source_langs={source_langs}")
             continue
         try:
             start_time = time.time()
