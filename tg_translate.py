@@ -139,14 +139,33 @@ logging = logger  # 兼容原有logging调用
 # ========== ignore_words 处理 ==========
 ignore_words = set(config.get('ignore_words', []))
 
+# 编译ignore_words为正则模式列表，支持更复杂的前缀、空格、数字等场景
+def build_ignore_patterns(words):
+    patterns = []
+    for word in words:
+        w = word.strip()
+        if not w:
+            continue
+        # 中文关键词：以该词开头+数字/空格/标点/结尾
+        if re.search(r'[\u4e00-\u9fff]', w):
+            patterns.append(re.compile(rf"^{re.escape(w)}([\d\s/，,。.!！、：:；;（）()\[\]\-—_]|$)", re.IGNORECASE))
+        else:
+            # 英文关键词：以w为单词边界开头（如".de", ".de ", ".de3"等），忽略大小写
+            patterns.append(re.compile(rf"^{re.escape(w)}(\s|$|\d+)", re.IGNORECASE))
+    return patterns
+
+ignore_patterns = build_ignore_patterns(ignore_words)
+
 def should_ignore(text):
-    # 完全匹配或以.开头的命令
-    t = text.strip().lower()
-    if t in ignore_words:
-        return True
-    for word in ignore_words:
-        if word.startswith('.') and t.startswith(word):
-            return True
+    # 单行或多行，只要任一行以ignore_words关键词为前缀（严格正则）则整体忽略
+    lines = text.strip().splitlines()
+    for line in lines:
+        l = line.strip()
+        for pat in ignore_patterns:
+            if pat.match(l):
+                logging.info(f"[DEBUG] should_ignore命中: '{l}' 被 {pat.pattern} 拦截")
+                return True
+    logging.info(f"[DEBUG] should_ignore未命中: '{text}'")
     return False
 
 # ========== Telegram 客户端初始化 ==========
@@ -215,13 +234,13 @@ def parse_on_command(args):
     return group_id, user_ids, source_langs, target_langs
 
 async def send_ephemeral_reply(event, reply_text):
-    """发送指令回复，10秒后自动删除（指令消息和回复消息），并写日志"""
+    """发送指令回复，15秒后自动删除（指令消息和回复消息），并写日志"""
     try:
         rep_msg = await event.reply(reply_text)
         chat_id = event.chat_id
         operator_id = event.sender_id
         logging.info(f"[CMD-EPHEMERAL] user {operator_id} sent command: {event.text!r}, reply: {reply_text!r}")
-        await asyncio.sleep(20)
+        await asyncio.sleep(15)
         await event.client.delete_messages(chat_id, [event.id, rep_msg.id])
     except Exception as e:
         logging.warning(f"Failed to delete command/reply message: {e}")
@@ -512,10 +531,57 @@ async def translate_text(text, source_lang, target_langs, prefer=None):
 
 # ========== 消息处理主流程 ==========
 def contains_chinese(text):
-    return any('\u4e00' <= character <= '\u9fff' for character in text)
+    # 仅当文本中有明显中文汉字时才返回True
+    for character in text:
+        if '\u4e00' <= character <= '\u9fff':
+            return True
+    return False
+
+import unicodedata
+import string
+import re
+
+def remove_emoji_and_punct(text):
+    # 去除emoji和常见标点
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "]+",
+        flags=re.UNICODE,
+    )
+    # 去除emoji
+    text = emoji_pattern.sub(r'', text)
+    # 去除标点
+    text = ''.join(ch for ch in text if ch not in string.punctuation and not unicodedata.category(ch).startswith('P'))
+    return text
 
 def contains_non_chinese(text):
-    return any(character < '\u4e00' or character > '\u9fff' for character in text)
+    # 先去除emoji和标点
+    clean = remove_emoji_and_punct(text)
+    # 检查是否含有拉丁字母（欧美语言）
+    if re.search(r'[A-Za-z]', clean):
+        return True
+    # 检查常见世界大语种（阿拉伯文、波斯文、印地文、乌尔都文、土耳其文、西里尔文等）
+    # 阿拉伯文: \u0600-\u06FF，波斯文: \u0600-\u06FF，印地文: \u0900-\u097F，乌尔都文: \u0600-\u06FF
+    # 土耳其文主要用拉丁字母，西里尔文: \u0400-\u04FF
+    # 韩文: \uAC00-\uD7AF，日文假名: \u3040-\u30FF
+    if re.search(r'[\u0600-\u06FF]', clean):  # 阿拉伯/波斯/乌尔都
+        return True
+    if re.search(r'[\u0900-\u097F]', clean):  # 印地文
+        return True
+    if re.search(r'[\u0400-\u04FF]', clean):  # 西里尔文（俄语等）
+        return True
+    if re.search(r'[\uAC00-\uD7AF]', clean):  # 韩文
+        return True
+    if re.search(r'[\u3040-\u30FF]', clean):  # 日文假名
+        return True
+    # 只剩下的字符如果全是中文或空，则不算“非中文”
+    return False
 
 def is_pure_url(text):
     url_pattern = r'^\s*http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+\s*$'
@@ -523,15 +589,22 @@ def is_pure_url(text):
 
 @client.on(events.NewMessage)
 async def handle_message(event):
-    # 只处理非命令消息
+    # 只处理非命令消息，且消息未被删除
     if not event.message or not event.message.text:
         return
+    # 检查消息是否已被删除（如被其他bot删除）
+    try:
+        # 若消息已被删除，访问event.message会抛异常或event.message.deleted为True
+        if getattr(event.message, "deleted", False):
+            return
+    except Exception:
+        return
     text = event.message.text.strip()
-    if text.startswith('.fy-'):
-        return  # 命令消息交由handle_command处理
-
+    # 优先判断是否为忽略关键词，命中则直接return
     if should_ignore(text):
         return
+    if text.startswith('.fy-'):
+        return  # 命令消息交由handle_command处理
     if is_pure_url(text):
         return
 
@@ -546,6 +619,49 @@ async def handle_message(event):
     reply_text = ""
     prefer = config.get('default_translate_source', 'deeplx')
     hit = False
+    # 语言代码到中文名称映射
+    lang_map = {
+        "en": "英语",
+        "zh": "中文",
+        "fr": "法语",
+        "de": "德语",
+        "ru": "俄语",
+        "ja": "日语",
+        "ko": "韩语",
+        "ar": "阿拉伯语",
+        "hi": "印地语",
+        "tr": "土耳其语",
+        "fa": "波斯语",      # 伊朗
+        "uk": "乌克兰语",    # 乌克兰
+        "es": "西班牙语",    # 西班牙
+        "it": "意大利语",    # 意大利、瑞士
+        "rm": "罗曼什语",    # 瑞士
+        "pt": "葡萄牙语",
+        "pl": "波兰语",
+        "nl": "荷兰语",
+        "sv": "瑞典语",
+        "ro": "罗马尼亚语",
+        "cs": "捷克语",
+        "el": "希腊语",
+        "da": "丹麦语",
+        "fi": "芬兰语",
+        "hu": "匈牙利语",
+        "he": "希伯来语",
+        "bg": "保加利亚语",
+        "sr": "塞尔维亚语",
+        "hr": "克罗地亚语",
+        "sk": "斯洛伐克语",
+        "sl": "斯洛文尼亚语",
+        "no": "挪威语",
+        # 可根据需要继续扩展
+    }
+    # 引入langdetect做主语言识别
+    try:
+        from langdetect import detect
+        detected_lang = detect(text)
+    except Exception:
+        detected_lang = None
+
     for rule in rule_list:
         source_langs = rule.get('source_langs', ['en'])
         target_langs = rule.get('target_langs', ['zh'])
@@ -555,7 +671,7 @@ async def handle_message(event):
             if sl == "zh" and contains_chinese(text):
                 active_source = sl
                 break
-            elif sl != "zh" and contains_non_chinese(text):
+            elif sl != "zh" and detected_lang and sl == detected_lang:
                 active_source = sl
                 break
         if not active_source:
@@ -567,7 +683,8 @@ async def handle_message(event):
             for lang in target_langs:
                 reply = translated.get(lang, "")
                 if reply:
-                    reply_text += f"[{lang}] {reply}\n"
+                    lang_name = lang_map.get(lang, lang)
+                    reply_text += f"{lang_name}：`{reply}`\n"
             hit = True
         except Exception as e:
             logging.error(f"消息翻译异常: {e}")
