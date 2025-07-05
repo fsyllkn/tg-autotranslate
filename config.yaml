@@ -30,33 +30,44 @@ openai:
 # 引擎顺序轮询，调用失效次数达到阈值后（留空默认3次）禁用
 deeplx_fail_threshold: 2
 openai_fail_threshold: 2
-# 新增：默认翻译方向规则，在不加规则的指令下，使用默认翻译规则
-self_default_rule: "zh,en"        # 如使用编号，等同于下面规则池编号，等价于 "zh,en"，推荐直接填规则
+
+# fasttext 语言识别配置
+fasttext:
+  enabled: true
+  confidence_threshold: 0.8
+  fallback_enabled: true
+
+
+# 新增：默认翻译方向规则
+# self_default_rule、other_default_rule 都可填编号(如 "1")，后续会从translate_rules表取内容
+# 也可直接填"zh,en"（源,目标），或"fr,en"、"ru,zh"等
+# 推荐直接配置为语言对形式(便于理解)，如需管理常用可在规则池配置
+self_default_rule: "zh,en"        # 如使用编号，等同于下面规则池编号，等价于 "zh,en"
 other_default_rule: "en,zh"       # 如使用编号，等同于下面规则池编号，等价于 "en,zh"
 
-# 规则池，用于展示规则写法，可以自己增加规则，写法支持，一对一、一对多、多对一、多对多规则都可以
+# 可选规则池(编号一定是字符串)
+# 支持管理/维护常用组合，格式：编号: "源1|源2,目1|目2"，每对为一组，代码默认取第一组使用(扩展请修改parse_rule_pair)
+# 多组举例："fr|ru,en|zh" 表示可支持法语/俄语源翻成英文/中文；如只配对一组就是"zh,en"或"en,zh"
 translate_rules:
   "1": "zh,en"  # 中->英
   "2": "en,zh"  # 英->中
   "3": "fr,en"
   "4": "ru,zh"
   "5": "fr|ru,en|zh"    # 多源/多目标写法（仅内部约定，主流程取第一组做默认）
-  "6": "fr|ru,en"    # 多源/多目标写法（仅内部约定，主流程取第一组做默认）
-  "7": "fr,en|zh"    # 多源/多目标写法（仅内部约定，主流程取第一组做默认）
 
 ignore_words:
   # 以下为不需要翻译的英文指令或关键词，支持完全匹配和部分匹配（如以.开头的命令）
-  # 可根据实际需求增删，列举为同时使用了bncr无界bot项目，避免指令冲突，或者误翻译
-  - "已删除"
+  # 可根据实际需求增删
   - "cd"
   - "60s"
   - ".de"
   - ".id"
   - "id"
   - "我的id"
+  - "已删除"
   - "群id"
-  - "fy"
   - ".fy"
+  - "fy"
   - "ai"
   - "gg"
   - "gp"
@@ -81,3 +92,4 @@ ignore_words:
   - "ainewgptc"
   - "ainewgptp"
   - "ainewdraw"
+
