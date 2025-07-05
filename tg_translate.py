@@ -824,6 +824,164 @@ def is_pure_url(text):
     url_pattern = r'^\s*http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+\s*$'
     return re.match(url_pattern, text) is not None
 
+# ========== fasttext 语言识别 ==========
+
+try:
+    import fasttext
+    FASTTEXT_MODEL_PATH = "lid.176.bin"
+    _fasttext_model = None
+    if os.path.exists(FASTTEXT_MODEL_PATH):
+        _fasttext_model = fasttext.load_model(FASTTEXT_MODEL_PATH)
+    else:
+        print(f"[INFO] fastText 语言识别模型 {FASTTEXT_MODEL_PATH} 未找到，正在自动下载...")
+        try:
+            import requests
+            url = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
+            with requests.get(url, stream=True, timeout=60) as r:
+                r.raise_for_status()
+                total = int(r.headers.get('content-length', 0))
+                with open(FASTTEXT_MODEL_PATH, 'wb') as f:
+                    downloaded = 0
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            done = int(50 * downloaded / total) if total else 0
+                            print(f"\r[下载进度] [{'#' * done}{'.' * (50 - done)}] {downloaded // 1024}KB/{total // 1024 if total else '?'}KB", end='')
+                print("\n[INFO] lid.176.bin 下载完成。")
+            _fasttext_model = fasttext.load_model(FASTTEXT_MODEL_PATH)
+        except Exception as e:
+            print(f"[WARN] fastText 语言识别模型自动下载失败: {e}")
+            print(f"[WARN] 请手动下载 https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin 并放到脚本目录。")
+except ImportError:
+    _fasttext_model = None
+    print("[WARN] 未安装 fasttext，语言识别将回退为字符区间法。")
+except Exception as e:
+    _fasttext_model = None
+    print(f"[WARN] fastText 加载异常: {e}")
+
+def detect_language(text, source_langs=None):
+    # 读取fasttext配置
+    ft_cfg = config.get('fasttext', {})
+    enabled = ft_cfg.get('enabled', True)
+    threshold = float(ft_cfg.get('confidence_threshold', 0.8))
+    fallback_enabled = ft_cfg.get('fallback_enabled', True)
+    pure_text = remove_emoji_and_punct(text)
+    logging.info(f"[DEBUG] detect_language pure_text='{pure_text}'")
+    # 配置阈值
+    short_text_len = int(ft_cfg.get('short_text_len', 10))
+    # 优先处理短文本
+    if len(pure_text) < short_text_len:
+        # 1. 规则法优先：contains_chinese/contains_latin
+        if re.search(r'[\u4e00-\u9fff]', text):
+            logging.info(f"[DEBUG] contains_chinese: 判定为zh")
+            return 'zh'
+        elif re.search(r'[A-Za-zÀ-ÿ]', text):
+            # 多语种高频词辅助识别
+            lang_keywords = {
+                "fr": [
+                    "pas", "est", "le", "la", "un", "une", "je", "tu", "vous", "nous", "avec", "pour", "mais", "sur", "dans", "des", "du", "au", "aux", "ce", "cette", "ces", "mon", "ton", "son", "leur", "qui", "que", "quoi", "où", "comment", "parce", "bien", "mal", "très", "plus", "moins", "aussi", "comme", "si", "non", "oui"
+                ],
+                "en": [
+                    "the", "is", "are", "you", "he", "she", "it", "and", "but", "not", "with", "for", "on", "in", "at", "by", "to", "of", "from", "as", "that", "this", "these", "those", "my", "your", "his", "her", "their", "who", "what", "where", "how", "because", "very", "well", "bad", "good", "no", "yes"
+                ],
+                "de": [
+                    "nicht", "und", "ist", "ich", "du", "sie", "wir", "ihr", "mein", "dein", "sein", "ihr", "unser", "euer", "kein", "ja", "nein", "bitte", "danke", "gut", "schlecht", "sehr", "auch", "aber", "oder", "wenn", "weil", "was", "wer", "wie", "wo", "warum", "dass", "dies", "das", "ein", "eine", "mit", "für", "auf", "im", "am", "aus", "bei", "nach", "vor", "über", "unter", "zwischen"
+                ],
+                "es": [
+                    "no", "sí", "pero", "muy", "también", "como", "más", "menos", "por", "para", "con", "sin", "sobre", "entre", "cuando", "porque", "qué", "quién", "dónde", "cómo", "cuándo", "yo", "tú", "él", "ella", "nosotros", "vosotros", "ellos", "ellas", "mi", "tu", "su", "nuestro", "vuestro", "este", "ese", "aquel", "uno", "una", "unos", "unas"
+                ],
+                "it": [
+                    "non", "sì", "ma", "molto", "anche", "come", "più", "meno", "per", "con", "senza", "su", "tra", "quando", "perché", "che", "chi", "dove", "come", "quando", "io", "tu", "lui", "lei", "noi", "voi", "loro", "mio", "tuo", "suo", "nostro", "vostro", "questo", "quello", "uno", "una", "alcuni", "alcune"
+                ],
+                "pt": [
+                    "não", "sim", "mas", "muito", "também", "como", "mais", "menos", "por", "para", "com", "sem", "sobre", "entre", "quando", "porque", "que", "quem", "onde", "como", "quando", "eu", "tu", "ele", "ela", "nós", "vós", "eles", "elas", "meu", "teu", "seu", "nosso", "vosso", "este", "esse", "aquele", "um", "uma", "uns", "umas"
+                ],
+                "nl": [
+                    "niet", "en", "is", "ik", "jij", "hij", "zij", "wij", "jullie", "mijn", "jouw", "zijn", "haar", "ons", "onze", "geen", "ja", "nee", "alstublieft", "dank", "goed", "slecht", "zeer", "ook", "maar", "of", "als", "omdat", "wat", "wie", "hoe", "waar", "waarom", "dat", "deze", "dit", "een", "met", "voor", "op", "in", "uit", "bij", "naar", "voor", "over", "onder", "tussen"
+                ]
+            }
+            lang_chars = {
+                "fr": "çéèêàùâîôûëïüœæ",
+                "de": "äöüß",
+                "es": "áéíóúñü",
+                "it": "àèéìíîòóùú",
+                "pt": "áàâãéêíóôõúç",
+                "nl": ""
+            }
+            text_lower = text.lower()
+            # 优先检查高频词
+            for lang, keywords in lang_keywords.items():
+                for kw in keywords:
+                    # 单词边界正则匹配，确保句首/句尾/标点等场景均可识别
+                    if re.search(rf"\b{re.escape(kw)}\b", text_lower):
+                        logging.info(f"[DEBUG] contains_latin: 检测到{lang}高频词({kw})，判定为{lang}")
+                        return lang
+            # 未命中高频词再检测专有字符
+            for lang, chars in lang_chars.items():
+                if any(c in text_lower for c in chars):
+                    logging.info(f"[DEBUG] contains_latin: 检测到{lang}专有字符，判定为{lang}")
+                    return lang
+            # 只在 source_langs 唯一且为拉丁语种时直接返回该语种
+            latin_langs = [
+                "en", "fr", "de", "es", "it", "pt", "nl", "pl", "ro", "sv", "fi", "da", "no", "cs", "sk", "sl", "hr", "hu", "tr", "rm"
+            ]
+            if source_langs and len(source_langs) == 1 and source_langs[0] in latin_langs:
+                logging.info(f"[DEBUG] contains_latin: source_langs唯一且为拉丁语种，直接返回{source_langs[0]}")
+                return source_langs[0]
+        # 2. 若 source_langs 唯一，直接返回
+        if source_langs and len(source_langs) == 1:
+            logging.info(f"[DEBUG] 短文本source_langs唯一，直接返回{source_langs[0]}")
+            return source_langs[0]
+        # 3. fasttext 兜底
+        if enabled and _fasttext_model:
+            try:
+                pred = _fasttext_model.predict(pure_text.replace("\n", " ")[:512])
+                logging.info(f"[DEBUG] fastText.predict(short:'{pure_text[:32]}...')={pred}")
+                lang = pred[0][0].replace("__label__", "")
+                if lang:
+                    return lang
+            except Exception as e:
+                print(f"[WARN] fastText 识别异常: {e}")
+        logging.info(f"[DEBUG] 短文本未能判定语种")
+        return 'unknown'
+    # 长文本优先fasttext
+    if enabled and _fasttext_model:
+        try:
+            pred = _fasttext_model.predict(pure_text.replace("\n", " ")[:512])
+            logging.info(f"[DEBUG] fastText.predict('{pure_text[:32]}...')={pred}")
+            lang = pred[0][0].replace("__label__", "")
+            prob = float(pred[1][0]) if pred and len(pred) > 1 and len(pred[1]) > 0 else 0.0
+            if prob < threshold:
+                logging.info(f"[DEBUG] fastText 置信度过低({prob:.2f}), threshold={threshold}, fallback={fallback_enabled}")
+            else:
+                return lang
+        except Exception as e:
+            print(f"[WARN] fastText 识别异常: {e}")
+    if fallback_enabled:
+        logging.info(f"[DEBUG] fallback: 正在用区间法检测 pure_text='{pure_text}'")
+        if re.search(r'[\u4e00-\u9fff]', pure_text):
+            logging.info(f"[DEBUG] fallback: 匹配到中文")
+            return 'zh'
+        elif re.search(r'[\u0400-\u04FF]', pure_text):
+            logging.info(f"[DEBUG] fallback: 匹配到俄语")
+            return 'ru'
+        elif re.search(r'[\u3040-\u30FF]', pure_text):
+            logging.info(f"[DEBUG] fallback: 匹配到日语")
+            return 'ja'
+        elif re.search(r'[\uAC00-\uD7AF]', pure_text):
+            logging.info(f"[DEBUG] fallback: 匹配到韩语")
+            return 'ko'
+        elif re.search(r'[\u0600-\u06FF]', pure_text):
+            logging.info(f"[DEBUG] fallback: 匹配到阿拉伯语")
+            return 'ar'
+        elif re.search(r'[A-Za-zÀ-ÿ]', pure_text) and not re.search(r'[\u4e00-\u9fff\u0400-\u04FF\u3040-\u30FF\uAC00-\uD7AF\u0600-\u06FF]', pure_text):
+            logging.info(f"[DEBUG] fallback: 匹配到英语/拉丁语")
+            return 'en'
+        else:
+            logging.info(f"[DEBUG] fallback: 未匹配到任何语种")
+    return 'unknown'
+
 @client.on(events.NewMessage)
 async def handle_message(event):
     # 只处理非命令消息，且消息未被删除
@@ -837,6 +995,10 @@ async def handle_message(event):
     except Exception:
         return
     text = event.message.text.strip()
+    # 新增：如消息中包含 .fy- 指令且含中文，则不翻译
+    if ".fy-" in text and contains_chinese(text):
+        logging.info(f"[DEBUG] .fy-指令+中文命中，跳过翻译: '{text}'")
+        return
     # 优先判断是否为忽略关键词，命中则直接return
     if should_ignore(text):
         return
@@ -892,79 +1054,34 @@ async def handle_message(event):
         "no": "挪威语",
         # 可根据需要继续扩展
     }
-    # 新增：字符区间法语言识别，完全替换 langdetect
-    def detect_language(text):
-        pure_text = remove_emoji_and_punct(text)
-        # 中文
-        if re.search(r'[\u4e00-\u9fff]', pure_text):
-            return 'zh'
-        # 俄语
-        elif re.search(r'[\u0400-\u04FF]', pure_text):
-            return 'ru'
-        # 日语
-        elif re.search(r'[\u3040-\u30FF]', pure_text):
-            return 'ja'
-        # 韩语
-        elif re.search(r'[\uAC00-\uD7AF]', pure_text):
-            return 'ko'
-        # 阿拉伯语
-        elif re.search(r'[\u0600-\u06FF]', pure_text):
-            return 'ar'
-        # 拉丁语系（含所有拉丁字母及变体，排除特殊区间）
-        elif re.search(r'[A-Za-zÀ-ÿ]', pure_text) and not re.search(r'[\u4e00-\u9fff\u0400-\u04FF\u3040-\u30FF\uAC00-\uD7AF\u0600-\u06FF]', pure_text):
-            return 'latin'
-        else:
-            return None
-
-    detected_lang = detect_language(text)
-
-    def normalize_punct(s):
-        # 全角转半角（严格一一对应，长度一致）
-        full = "，。！？：；“”‘’（）【】《》、．·？！（）"
-        half = ",.!?:;\"\"''()[]<>/,..?!()"  # 与full等长
-        table = str.maketrans(full, half)
-        s = s.translate(table)
-        # 统一空格
-        s = s.replace('\u3000', ' ')
-        return s
-
+    # 支持多规则多目标合并翻译
+    translated_results = {}
     for rule in rule_list:
         source_langs = rule.get('source_langs', ['en'])
         target_langs = rule.get('target_langs', ['zh'])
+        # 使用 fasttext detect_language 识别主语言，传入 source_langs
+        detected_lang = detect_language(text, source_langs=source_langs)
         # 智能识别源语言，找到适合本条消息的语言组
         active_source = None
-        # 仅用于判断的纯文本（去除emoji和所有标点符号）
-        pure_text = remove_emoji_and_punct(text)
         logging.info(f"[DEBUG] 检测到的源语言: detected_lang={detected_lang}, source_langs={source_langs}")
+        latin_langs = [
+            "en", "fr", "de", "es", "it", "pt", "nl", "pl", "ro", "sv", "fi", "da", "no", "cs", "sk", "sl", "hr", "hu", "tr", "rm"
+        ]
         for sl in source_langs:
-            if sl == "zh" and contains_chinese(pure_text):
-                active_source = sl
-                break
-            # 支持拉丁语系泛匹配：source_langs 里有 latin 时，所有拉丁语种都可触发
-            elif detected_lang == "latin" and (sl.lower() == "latin" or sl.lower() in ["fr", "it", "de", "es", "pt", "nl", "sv", "fi", "da", "no", "pl", "cs", "ro", "sk", "sl", "hr", "hu", "tr", "bg", "el", "lt", "lv", "et", "mt", "ga", "rm"]):
+            if sl == "zh" and contains_chinese(text):
                 active_source = sl
                 break
             elif sl != "zh" and detected_lang and sl.lower() == detected_lang.lower():
                 active_source = sl
                 break
-        # 优化fallback: langdetect失败时，优先用正则判断是否为纯英文或纯中文，并提升英文判定准确率
-        if not active_source and (not detected_lang or detected_lang == "None"):
-            # 只含汉字
-            if re.fullmatch(r'[\u4e00-\u9fff\s]*', pure_text):
-                if "zh" in source_langs:
-                    active_source = "zh"
-                    logging.info(f"[DEBUG] fallback: 纯汉字正则命中，假定active_source为'zh'")
-            # 只含拉丁字母、空格，且字母占比>80%，且 source_langs 只包含 en 时才判为英文
-            elif re.fullmatch(r'[A-Za-z\s]*', pure_text) and pure_text:
-                letter_count = sum(1 for c in pure_text if c.isalpha())
-                ratio = letter_count / len(pure_text.replace(" ", "")) if pure_text.replace(" ", "") else 0
-                if ratio > 0.8 and len(source_langs) == 1 and source_langs[0].lower() == "en":
-                    active_source = "en"
-                    logging.info(f"[DEBUG] fallback: 纯英文正则+字母占比命中，且仅有en，假定active_source为'en'")
-            # 其它情况不再 fallback 为英文，避免多语种规则误判
-        if not active_source:
-            logging.info(f"[DEBUG] 未找到匹配的源语言: detected_lang={detected_lang}, source_langs={source_langs}")
-            continue
+        # fallback: 若detect失败且source_langs只有en且文本明显为非中文，则假定为en
+        if not active_source and (not detected_lang or detected_lang == "unknown"):
+            if len(source_langs) == 1:
+                active_source = source_langs[0]
+                logging.info(f"[DEBUG] fallback: detected_lang=unknown且source_langs唯一，直接假定active_source为{active_source}")
+            elif len(source_langs) == 1 and source_langs[0].lower() == "en" and contains_non_chinese(text):
+                active_source = "en"
+                logging.info(f"[DEBUG] fallback: contains_non_chinese命中，假定active_source为'en'")
         if not active_source:
             logging.info(f"[DEBUG] 未找到匹配的源语言: detected_lang={detected_lang}, source_langs={source_langs}")
             continue
@@ -976,11 +1093,17 @@ async def handle_message(event):
                 reply = translated.get(lang, "")
                 if reply:
                     lang_name = lang_map.get(lang, lang)
-                    reply_text += f"{lang_name}：`{reply}`\n"
+                    # 多规则多目标去重合并
+                    if lang not in translated_results:
+                        translated_results[lang] = reply
             hit = True
         except Exception as e:
             logging.error(f"消息翻译异常: {e}")
-    if hit and reply_text.strip():
+    if hit and translated_results:
+        reply_text = ""
+        for lang, reply in translated_results.items():
+            lang_name = lang_map.get(lang, lang)
+            reply_text += f"{lang_name}：`{reply}`\n"
         try:
             await event.reply(reply_text.strip())
         except Exception as e:
