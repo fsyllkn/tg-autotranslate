@@ -6,6 +6,7 @@
 一、安装：
 
 1、准备工作：
+
 1.1创建文件夹，并进入文件夹，把py文件和yaml配置文件拉下来，
 ```
 mkdir -p /root/tg-autotranslate
