@@ -27,9 +27,10 @@ openai:
     - "gpt-4o"
     - "deepseek-r1-0528"
     - "gemini-2.0-flash"
+
 # 引擎顺序轮询，调用失效次数达到阈值后（留空默认3次）禁用
-deeplx_fail_threshold: 4
-openai_fail_threshold: 4
+deeplx_fail_threshold: 2
+openai_fail_threshold: 2
 
 # fasttext 语言识别配置
 fasttext:
@@ -48,26 +49,23 @@ lang_detect_proper_nouns:
   - gpt
   - sdwebui
   - stable-diffusion
-# 新增：默认翻译方向规则
-self_default_rule: "zh,en"      # 如使用编号，等同于下面规则池编号，等价于 "zh,en"
-other_default_rule: "en,zh"     # 如使用编号，等同于下面规则池编号，等价于 "en,zh"
+
+# 默认翻译方向规则
+self_default_rule: "3"      # 如使用编号，等同于下面规则池编号，等价于 "zh,en"
+other_default_rule: "3"     # 如使用编号，等同于下面规则池编号，等价于 "en,zh"
 
 # 可选规则池(编号一定是字符串)
-# 支持管理/维护常用组合，格式：编号: "源1|源2,目1|目2"，每对为一组，代码默认取第一组使用(扩展请修改parse_rule_pair)
-# 多组举例："fr|ru,en|zh" 表示可支持法语/俄语源翻成英文/中文；如只配对一组就是"zh,en"或"en,zh"
 translate_rules:
   "1": "zh,en"                 # 中->英
   "2": "en,zh"                 # 英->中
   "3": "zh|en,zh|en"           # 中英互译
-  "4": "ru,zh|ar"              # 俄译中、阿拉伯语
+  "4": "ru|ar,zh"              # 俄译中、阿拉伯语
   "5": "fr|ru,en|zh"           # 多源/多目标写法（仅内部约定，主流程取第一组做默认）
   "6": "fr|ru|en,en|zh"        # 分别按照有效规则计入，且已有重复规则合并
   "7": "*,en|zh"               # 删除规则时，可以删除匹配目标语言为en和zh的任意源语言组合
   "7": "en|zh,*"               # 删除规则时，可以删除匹配源语言为en和zh的任意目标语言组合
-    
+
 ignore_words:
-  # 以下为不需要翻译的英文指令或关键词，支持完全匹配和部分匹配（如以.开头的命令）
-  # 可根据实际需求增删
   - "cd"
   - "60s"
   - ".de"
