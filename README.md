@@ -2,7 +2,6 @@
 借助GPT融合了linux.do论坛里的两个大佬分享的脚本，用于自学自用，请轻喷~
 使用gpt干活前，参考的教程：
 `https://linux.do/t/topic/18308` 和 `https://linux.do/t/topic/9582`
-## 一、安装：
 ### 1、准备工作：
 #### 1.1创建文件夹，并进入文件夹，把py文件和yaml配置文件拉下来，
 ```
@@ -21,6 +20,22 @@ nano config.yaml
 或者
 vi config.yaml
 ```
+# 附：配置文件说明（待详细说明。参考配置文件内注释）
+* 
+<details>
+<summary><code><strong>「 点击展开 查看配置文件 」</strong></code></summary>
+
+****
+## 1.根据配置文件的描述填写即可
+
+### 1.1 tg的id、hash、api_id
+### 1.2 linux.do的码子、openai的的中转URL和apikey
+## 2、默认翻译规则填写（默认也可）
+### 2.1尽可能支持
+</details>
+
+****
+
 #### 1.3安装依赖：`pip install aiohttp telethon` ,如果你的机器还缺其他依赖，自行安装即可。
 
 ### 2、测试运行程序（注意cd进入脚本所在的文件夹）
@@ -31,7 +46,7 @@ python3 tg-autotranslate.py
 1·需要tg的手机号码（需要输入+130178787878这样格式）；2·验证码（已登录设备上的tg接收）；3·密码（二步验证，如有设置）
 ![image](https://github.com/user-attachments/assets/c6f01d92-0f9e-46eb-9012-937708838a9b)
 
-#### 2.2测试:
+#### 2.2测试指令及翻译是否正常:
 在tg里输入指令测试是否正常、是否有报错，支持id和用户名
 指令帮助：
 - `.fy-on` 私聊、群聊-开启对自己消息的翻译（规则默认）；
