@@ -1,5 +1,6 @@
 # tg-autotranslate
 借助GPT融合了linux.do论坛里的两个大佬分享的脚本，用于自学自用，请轻喷~
+使用gpt干活前，参考的教程：
 `https://linux.do/t/topic/18308` 和 `https://linux.do/t/topic/9582`
 一、安装：
 1、准备工作：
