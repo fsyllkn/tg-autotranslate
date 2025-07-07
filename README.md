@@ -55,7 +55,7 @@ python3 tg-autotranslate.py
   部分无用户名的，如果需要用户id查询，可以借助bncr无界的脚本功能实现
 
 3、设置启动服务，方便开机启动和管理
-使用systemd
+
 3.1查看python3路径
 ```
 which python3
