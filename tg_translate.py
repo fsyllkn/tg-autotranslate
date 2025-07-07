@@ -36,9 +36,17 @@ def reload_config():
         print(msg)
         logging.error(msg)
         return
-    self_default_rule = str(config.get("self_default_rule", "zh,en"))
-    other_default_rule = str(config.get("other_default_rule", "en,zh"))
     translate_rules = {str(k): v for k, v in config.get("translate_rules", {}).items()} if "translate_rules" in config else {}
+    _self_rule = str(config.get("self_default_rule", "zh,en"))
+    if _self_rule.isdigit() and _self_rule in translate_rules:
+        self_default_rule = str(translate_rules[_self_rule])
+    else:
+        self_default_rule = _self_rule
+    _other_rule = str(config.get("other_default_rule", "en,zh"))
+    if _other_rule.isdigit() and _other_rule in translate_rules:
+        other_default_rule = str(translate_rules[_other_rule])
+    else:
+        other_default_rule = _other_rule
     ignore_words = set(config.get('ignore_words', []))
     DEEPLX_FAIL_THRESHOLD = int(config.get('deeplx_fail_threshold', 3))
     OPENAI_FAIL_THRESHOLD = int(config.get('openai_fail_threshold', 3))
@@ -91,6 +99,17 @@ def save_json_config(path, data):
         logging.error(f"保存JSON配置文件失败: {path}, 错误: {e}", exc_info=True)
 
 config = load_yaml_config('config.yaml')
+translate_rules = {str(k): v for k, v in config.get("translate_rules", {}).items()} if "translate_rules" in config else {}
+_self_rule = str(config.get("self_default_rule", "zh,en"))
+if _self_rule.isdigit() and _self_rule in translate_rules:
+    self_default_rule = str(translate_rules[_self_rule])
+else:
+    self_default_rule = _self_rule
+_other_rule = str(config.get("other_default_rule", "en,zh"))
+if _other_rule.isdigit() and _other_rule in translate_rules:
+    other_default_rule = str(translate_rules[_other_rule])
+else:
+    other_default_rule = _other_rule
 rules_path = 'dynamic_rules.json'
 rules = load_json_config(rules_path)
 fasttext_model_path = config.get('fasttext', {}).get('model_path', "lid.176.bin")
@@ -367,7 +386,7 @@ async def handle_command(event):
         if cmd == ".fy-clear":
             rules.clear()
             save_json_config(rules_path, {})
-            await send_ephemeral_reply(event, "已清空所有会话、成员的翻译规则（dynamic_rules.json 已重置）。")
+            await send_ephemeral_reply(event, "已关闭翻译功能（清空所有翻译规则）。")
             return
 
         if cmd == ".fy-help":
@@ -379,7 +398,7 @@ async def handle_command(event):
                 "- `.fy-add` 私聊-翻译对方消息（规则默认）；\n"
                 "- `.fy-del` 私聊-关闭翻译对方消息功能；\n"
                 "- `.fy-del` 群聊-关闭翻译所有成员消息功能；\n"
-                "- `.fy-add,zh|ru,en|fr` 私聊-为对方开中或者法语译英、法；\n"
+                "- `.fy-add,zh|ru,en|fr` 私聊-为对方开中文、俄语译英、法；\n"
                 "- `.fy-add,成员id或用户名` 群聊-对某个成员英译中；\n"
                 "- `.fy-add,成员id或用户名,源语言,目标语言` 群聊-为指定成员开启方向翻译；\n"
                 "- `.fy-del,成员id或用户名` 群聊-关闭翻译指定成员消息功能；\n"
@@ -425,6 +444,20 @@ async def handle_command(event):
                         rule_desc = f"{argstr}→en"
                 else:
                     rule_desc = config.get("self_default_rule", "zh|en,en|zh")
+                    # 反馈信息显示规则字符串
+                    if isinstance(rule_desc, str) and rule_desc.isdigit() and rule_desc in translate_rules:
+                        rule_desc = str(translate_rules[rule_desc])
+                # 规则反馈美化
+                _desc_norm = rule_desc.strip().replace('，',',')
+                if _desc_norm in {"zh|en,zh|en", "en|zh,en|zh"}:
+                    rule_desc = "中英互译"
+                elif _desc_norm == "en,zh":
+                    rule_desc = "英译中"
+                elif _desc_norm == "zh,en":
+                    rule_desc = "中译英"
+                elif "," in _desc_norm and len(_desc_norm.split(",")) == 2:
+                    src, tgt = _desc_norm.split(",")
+                    rule_desc = f"{src}->{tgt}"
                 await send_ephemeral_reply(
                     event,
                     f"已为 [自己] 在本{'群组' if is_group else '私聊'}开启翻译，规则为：{rule_desc}"
@@ -540,6 +573,20 @@ async def handle_command(event):
                             rule_desc = f"{args[1]}→zh"
                         else:
                             rule_desc = config.get("other_default_rule", "zh|en,en|zh")
+                            # 反馈信息显示规则字符串
+                            if isinstance(rule_desc, str) and rule_desc.isdigit() and rule_desc in translate_rules:
+                                rule_desc = str(translate_rules[rule_desc])
+                        # 规则反馈美化
+                        _desc_norm = rule_desc.strip().replace('，',',')
+                        if _desc_norm in {"zh|en,zh|en", "en|zh,en|zh"}:
+                            rule_desc = "中英互译"
+                        elif _desc_norm == "en,zh":
+                            rule_desc = "英译中"
+                        elif _desc_norm == "zh,en":
+                            rule_desc = "中译英"
+                        elif "," in _desc_norm and len(_desc_norm.split(",")) == 2:
+                            src, tgt = _desc_norm.split(",")
+                            rule_desc = f"{src}->{tgt}"
                         await send_ephemeral_reply(
                             event, f"已为群组成员{mem_id}({username})启用翻译，规则为：{rule_desc}"
                         )
@@ -578,6 +625,20 @@ async def handle_command(event):
                         rule_desc = f"{args[0]}→zh"
                     else:
                         rule_desc = config.get("other_default_rule", "zh|en,en|zh")
+                        # 反馈信息显示规则字符串
+                        if isinstance(rule_desc, str) and rule_desc.isdigit() and rule_desc in translate_rules:
+                            rule_desc = str(translate_rules[rule_desc])
+                    # 规则反馈美化
+                    _desc_norm = rule_desc.strip().replace('，',',')
+                    if _desc_norm in {"zh|en,zh|en", "en|zh,en|zh"}:
+                        rule_desc = "中英互译"
+                    elif _desc_norm == "en,zh":
+                        rule_desc = "英译中"
+                    elif _desc_norm == "zh,en":
+                        rule_desc = "中译英"
+                    elif "," in _desc_norm and len(_desc_norm.split(",")) == 2:
+                        src, tgt = _desc_norm.split(",")
+                        rule_desc = f"{src}->{tgt}"
                     await send_ephemeral_reply(
                         event, f"已为对方（此私聊）启用翻译，规则为：{rule_desc}"
                     )
@@ -598,7 +659,7 @@ async def handle_command(event):
                         save_json_config(rules_path, rules)
                         await send_ephemeral_reply(event, "已移除当前群所有成员翻译规则")
                     else:
-                        await send_ephemeral_reply(event, "本群无可删除成员翻译规则")
+                        await send_ephemeral_reply(event, "本群无可删除成员规则")
                     return
                 if args and args[0]:
                     mem_arg = args[0].strip()
@@ -1273,15 +1334,33 @@ async def handle_message(event):
         for src, tgt in all_targets:
             src2tgts.setdefault(src, set()).add(tgt)
         reply_text = ""
-        for src, tgts in src2tgts.items():
+        # 判断一对一/一对多
+        if len(src2tgts) == 1:
+            src, tgts = next(iter(src2tgts.items()))
             translated = await translate_text(text, src, list(tgts), prefer=prefer)
-            for lang in tgts:
+            if len(tgts) == 1:
+                lang = next(iter(tgts))
                 reply = translated.get(lang, "")
-                if not reply or reply.strip() == text.strip():
-                    logging.warning(f"[DEBUG] {src}->{lang} 翻译失败或与原文一致，未输出")
-                    continue
-                lang_name = lang_map.get(lang, lang)
-                reply_text += f"{src}->{lang}：`{reply}`\n"
+                if reply and reply.strip() != text.strip():
+                    reply_text = f"`{reply}`"
+            else:
+                for lang in tgts:
+                    reply = translated.get(lang, "")
+                    if not reply or reply.strip() == text.strip():
+                        logging.warning(f"[DEBUG] {src}->{lang} 翻译失败或与原文一致，未输出")
+                        continue
+                    lang_name = lang_map.get(lang, lang)
+                    reply_text += f"{lang_name}：`{reply}`\n"
+        else:
+            for src, tgts in src2tgts.items():
+                translated = await translate_text(text, src, list(tgts), prefer=prefer)
+                for lang in tgts:
+                    reply = translated.get(lang, "")
+                    if not reply or reply.strip() == text.strip():
+                        logging.warning(f"[DEBUG] {src}->{lang} 翻译失败或与原文一致，未输出")
+                        continue
+                    lang_name = lang_map.get(lang, lang)
+                    reply_text += f"{lang_name}：`{reply}`\n"
         if reply_text:
             try:
                 await event.reply(reply_text.strip())
