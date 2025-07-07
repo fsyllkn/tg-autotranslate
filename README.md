@@ -2,12 +2,9 @@
 借助GPT融合了linux.do论坛里的两个大佬分享的脚本，用于自学自用，请轻喷~
 使用gpt干活前，参考的教程：
 `https://linux.do/t/topic/18308` 和 `https://linux.do/t/topic/9582`
-
-一、安装：
-
-1、准备工作：
-
-1.1创建文件夹，并进入文件夹，把py文件和yaml配置文件拉下来，
+## 一、安装：
+### 1、准备工作：
+#### 1.1创建文件夹，并进入文件夹，把py文件和yaml配置文件拉下来，
 ```
 mkdir -p /root/tg-autotranslate
 ```
@@ -18,23 +15,23 @@ cd /root/tg-autotranslate
 ```
 git clone https://github.com/fsyllkn/tg-autotranslate.git
 ```
-1.2编辑config.yaml配置文件，填写tg相关信息、deeplx的URL（支持linux.do的码子，格式见配置文件）、OpenAI的apikey和URL（支持中转key）
+#### 1.2编辑config.yaml配置文件，填写tg相关信息、deeplx的URL（支持linux.do的码子，格式见配置文件）、OpenAI的apikey和URL（支持中转key）
 ```
 nano config.yaml
 或者
 vi config.yaml
 ```
-1.3安装依赖：`pip install aiohttp telethon` ,如果你的机器还缺其他依赖，自行安装即可。
+#### 1.3安装依赖：`pip install aiohttp telethon` ,如果你的机器还缺其他依赖，自行安装即可。
 
-2、测试运行程序（注意cd进入脚本所在的文件夹）
+### 2、测试运行程序（注意cd进入脚本所在的文件夹）
 ```
 python3 tg-autotranslate.py
 ```
-2.1首次运行会提示登录tg，根据提示登录:
+#### 2.1首次运行会提示登录tg，根据提示登录:
 1·需要tg的手机号码（需要输入+130178787878这样格式）；2·验证码（已登录设备上的tg接收）；3·密码（二步验证，如有设置）
 ![image](https://github.com/user-attachments/assets/c6f01d92-0f9e-46eb-9012-937708838a9b)
 
-2.2测试:
+#### 2.2测试:
 在tg里输入指令测试是否正常、是否有报错，支持id和用户名
 指令帮助：
 - `.fy-on` 私聊、群聊-开启对自己消息的翻译（规则默认）；
@@ -54,9 +51,9 @@ python3 tg-autotranslate.py
 - `.fy-help` 查看指令与用法说明。
   部分无用户名的，如果需要用户id查询，可以借助bncr无界的脚本功能实现
 
-3、设置启动服务，方便开机启动和管理
+### 3、设置启动服务，方便开机启动和管理
 
-3.1查看python3路径
+#### 3.1查看python3路径
 ```
 which python3
 ```
@@ -64,7 +61,7 @@ which python3
 ```
 /usr/bin/python3
 ```
-3.2根据自己的路径编辑后，直接在ssh里梭哈（注意路径要和自己前面创建的一致——WorkingDirectory=/root/tg-autotranslate、/root/tg-autotranslate/tg-autotranslate.py）
+#### 3.2根据自己的路径编辑后，直接在ssh里梭哈（注意路径要和自己前面创建的一致——WorkingDirectory=/root/tg-autotranslate、/root/tg-autotranslate/tg-autotranslate.py）
 ```
 sudo bash -c 'cat <<EOF > /etc/systemd/system/tg-autotranslate.service
 [Unit]
@@ -82,11 +79,11 @@ User=root
 WantedBy=multi-user.target
 EOF'
 ```
-3.3重新加载：
+#### 3.3重新加载：
 ```
 systemctl daemon-reload
 ```
-3.4立即启动并设置开机自启：
+#### 3.4立即启动并设置开机自启：
 ```
 systemctl enable --now tg-autotranslate
 ```
@@ -95,7 +92,7 @@ systemctl enable --now tg-autotranslate
 systemctl enable tg-autotranslate
 systemctl start tg-autotranslate
 ```
-3.5检查服务状态
+#### 3.5检查服务状态
 ```
 systemctl status tg-autotranslate
 ```
