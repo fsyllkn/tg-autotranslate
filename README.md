@@ -36,7 +36,7 @@ vi config.yaml
 
 ****
 
-#### 1.3安装依赖：`pip install aiohttp telethon` ,如果你的机器还缺其他依赖，自行安装即可。
+#### 1.3安装依赖：`pip install aiohttp telethon` `pip install -r requirements.txt` ,如果你的机器还缺其他依赖，自行安装即可。
 
 ### 2、测试运行程序（注意cd进入脚本所在的文件夹）
 ```
