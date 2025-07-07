@@ -20,7 +20,7 @@ nano config.yaml
 或者
 vi config.yaml
 ```
-# 附：配置文件说明（待详细说明。参考配置文件内注释）
+### 附：配置文件说明（待详细说明。参考配置文件内注释）
 * 
 <details>
 <summary><code><strong>「 点击展开 查看配置文件 」</strong></code></summary>
