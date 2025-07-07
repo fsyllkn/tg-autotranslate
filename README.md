@@ -12,34 +12,43 @@ cd /root/tg-autotranslate
 ```
 
 ```
-git clone 
+git clone https://github.com/fsyllkn/tg-autotranslate.git
 ```
-1.2填写tg相关信息、deeplx的URL（支持linux.do的码子，格式见配置文件）、OpenAI的apikey和URL（支持中转key）
-
+1.2编辑config.yaml配置文件，填写tg相关信息、deeplx的URL（支持linux.do的码子，格式见配置文件）、OpenAI的apikey和URL（支持中转key）
+```
+nano config.yaml
+或者
+vi config.yaml
+```
 1.3安装依赖：`pip install aiohttp telethon` ,如果你的机器还缺其他依赖，自行安装即可。
 
-2、运行程序
+2、测试运行程序（注意cd进入脚本所在的文件夹）
 ```
 python3 tg-autotranslate.py
 ```
-2.1登录tg，根据提示登录:
+2.1首次运行会提示登录tg，根据提示登录:
 1·需要tg的手机号码（需要输入+130178787878这样格式）；2·验证码（已登录设备上的tg接收）；3·密码（二步验证，如有设置）
 ![image](https://github.com/user-attachments/assets/c6f01d92-0f9e-46eb-9012-937708838a9b)
 
 2.2测试:
-在tg里输入指令测试是否正常、是否有报错
+在tg里输入指令测试是否正常、是否有报错，支持id和用户名
 指令帮助：
-- `.fy-on` 开启私聊和群聊中自己默认中译英；
-- `.fy-off` 关闭对自己群聊中消息翻译功能，如果在私聊中，则同时关闭对双方消息的翻译；
-- `.fy-on,fr,zh` 指定自己私聊和群聊中法译中；
-- `.fy-add` 私聊为对方开默认英译中；
-- `.fy-add,zh|ru,en|fr` 私聊为对方开中或者法语译英、法；
-- `.fy-add,成员id` 群组中开启对某个成员的英译中（默认）；
-- `.fy-add,成员id,源语言,目标语言` 群组中为指定成员开启方向翻译；
-- `.fy-del,成员id` 群组中移除成员规则；
-- `.fy-clear` 管理员一键清除所有翻译规则；
+- `.fy-on` 私聊、群聊-开启对自己消息的翻译（规则默认）；
+- `.fy-off` 私聊、群聊-关闭自己翻译功能；
+- `.fy-on,fr|en,zh` 私聊、群聊-指定自己英或法译中；
+- `.fy-add` 私聊-翻译对方消息（规则默认）；
+- `.fy-del` 私聊-关闭翻译对方消息功能；
+- `.fy-del` 群聊-关闭翻译所有成员消息功能；
+- `.fy-add,zh|ru,en|fr` 私聊-为对方开中文、俄语译英、法；
+- `.fy-add,成员id或用户名` 群聊-对某个成员英译中；
+- `.fy-add,成员id或用户名,源语言,目标语言` 群聊-为指定成员开启方向翻译；
+- `.fy-del,成员id或用户名` 群聊-关闭翻译指定成员消息功能；
+- `.fy-add,成员id或用户名,源语言,目标语言` 群聊-为指定成员开启方向翻译；
+- `.fy-del,成员id或用户名,*,ar|fr` 群聊-删除翻译指定成员消息部分规则功能；
+- `.fy-clear` 一键清空所有翻译规则；
+- `.fy-list` 查看用户开启翻译功能的规则；
 - `.fy-help` 查看指令与用法说明。
-- 关于群成员id查询，可以借助bncr无界的脚本功能实现
+  部分无用户名的，如果需要用户id查询，可以借助bncr无界的脚本功能实现
 
 3、设置启动服务，方便开机启动和管理
 使用systemd
@@ -51,7 +60,7 @@ which python3
 ```
 /usr/bin/python3
 ```
-3.2写入内容（注意路径要和自己前面创建的一致——WorkingDirectory=/root/tg-autotranslate、/root/tg-autotranslate/tg-autotranslate.py）
+3.2根据自己的路径编辑后，直接在ssh里梭哈（注意路径要和自己前面创建的一致——WorkingDirectory=/root/tg-autotranslate、/root/tg-autotranslate/tg-autotranslate.py）
 ```
 sudo bash -c 'cat <<EOF > /etc/systemd/system/tg-autotranslate.service
 [Unit]
@@ -69,17 +78,22 @@ User=root
 WantedBy=multi-user.target
 EOF'
 ```
-3.3重新加载配置：
+3.3重新加载：
 ```
 systemctl daemon-reload
 ```
 3.4立即启动并设置开机自启：
 ```
-systemctl enable --now tg-autotranslate.service
+systemctl enable --now tg-autotranslate
+```
+或者
+```
+systemctl enable tg-autotranslate
+systemctl start tg-autotranslate
 ```
 3.5检查服务状态
 ```
-systemctl status tg-autotranslate.service
+systemctl status tg-autotranslate
 ```
 
 
