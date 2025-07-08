@@ -1,12 +1,12 @@
 telegram:
-  api_id: xxxxxxx
-  api_hash: "xxxxxxxxxxxxxxxxxb2536da610"
-  session_name: "translate"  # 支持修改，可以默认不更改
-  my_tg_id: xxxxxxxxx  # 你的Telegram用户ID，主要用于识别本人id，仅本人可用命令动态增删翻译规则
+  api_id: xxxxxxx                           # 自行谷歌获取教程
+  api_hash: "xxxxxxxxxxxxxxxxxb2536da610"   # 自行谷歌获取教程
+  session_name: "translate"                 # 支持修改，可默认
+  my_tg_id: xxxxxxxxx                       # 你的Telegram用户ID，主要用于识别本人id，控制仅本人可用命令动态增删翻译规则
 
 ### 默认翻译源，可选 openai 或 deeplx
 default_translate_source: "openai"
-### 翻译引擎一
+### 翻译引擎一，支持多个码子轮询，如果你有多个账号的话（小心始皇封号哦~）
 deeplx:
   base_urls:
     - "https://api.deeplx.org/可以用linux.do的码子1/translate"
@@ -28,17 +28,16 @@ openai:
     - "deepseek-r1-0528"
     - "gemini-2.0-flash"
 
-# 引擎顺序轮询，调用失效次数达到阈值后（留空默认3次）禁用
-deeplx_fail_threshold: 2
-openai_fail_threshold: 2
+# 支持引擎故障转移，调用失效次数达到阈值后（留空默认3次）禁用，自动检测恢复
+deeplx_fail_threshold: 3
+openai_fail_threshold: 3
 
 # fasttext 语言识别配置
 fasttext:
   enabled: true
   confidence_threshold: 0.8
   fallback_enabled: true
-  # 新增：模型文件路径，建议默认即可
-  model_path: "lid.176.bin"
+  model_path: "lid.176.bin"   # 模型文件路径，脚本自动下载至脚本所在目录，约125MB
 
 # 语言检测增强配置
 lang_detect_short_text_unknown: true
@@ -51,20 +50,20 @@ lang_detect_proper_nouns:
   - stable-diffusion
 
 # 默认翻译方向规则
-self_default_rule: "3"      # 如使用编号，等同于下面规则池编号，等价于 "zh,en"
-other_default_rule: "3"     # 如使用编号，等同于下面规则池编号，等价于 "en,zh"
+self_default_rule: "3"      # 如使用编号，等同于下面规则池编号，等价于 "zh|en,zh|en"
+other_default_rule: "2"     # 如使用编号，等同于下面规则池编号，等价于 "en,zh"
 
 # 可选规则池(编号一定是字符串)
 translate_rules:
-  "1": "zh,en"                 # 中->英
-  "2": "en,zh"                 # 英->中
+  "1": "zh,en"                 # 中译英
+  "2": "en,zh"                 # 英译中
   "3": "zh|en,zh|en"           # 中英互译
   "4": "ru|ar,zh"              # 俄译中、阿拉伯语
   "5": "fr|ru,en|zh"           # 多源/多目标写法（仅内部约定，主流程取第一组做默认）
   "6": "fr|ru|en,en|zh"        # 分别按照有效规则计入，且已有重复规则合并
   "7": "*,en|zh"               # 删除规则时，可以删除匹配目标语言为en和zh的任意源语言组合
   "7": "en|zh,*"               # 删除规则时，可以删除匹配源语言为en和zh的任意目标语言组合
-
+# 以下主要用于排除十一bncr无界bot的时候忽略有关指令，可以自行添加补充
 ignore_words:
   - "cd"
   - "60s"
