@@ -14,7 +14,7 @@ deeplx:
     - "https://api.deeplx.org/可以用linux.do的码子3/translate"
 ### 翻译引擎二
 openai:
-  # 支持多个API地址和Key，轮询防止失效，需按顺序对应
+  # 支持第三方中转站多个API地址和Key，轮询防止失效，需按顺序对应
   base_urls:
     - "https://api.xxx.com/v1"
     - "https://中转APIURL地址/v1"
