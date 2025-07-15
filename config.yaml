@@ -2,9 +2,13 @@ telegram:
   api_id: xxxxxxx                           # 自行谷歌获取教程
   api_hash: "xxxxxxxxxxxxxxxxxb2536da610"   # 自行谷歌获取教程
   session_name: "translate"                 # 支持修改，可默认
-  my_tg_id: xxxxxxxxx                       # 你的Telegram用户ID，主要用于识别本人id，控制仅本人可用命令动态增删翻译规则
+  my_tg_ids:
+    - xxxxxxxxxx    # 支持多用户白名单，填写用户自己的tg ID，如果增加其他用户的id，也可以执行命令（测试功能）
+    - bbbbbbbbbb
+  # 兼容单用户写法
+  #my_tg_id: xxxxxxx
 
-### 默认翻译源，可选 openai 或 deeplx
+### 默认翻译源，可填写 openai 或 deeplx
 default_translate_source: "openai"
 ### 翻译引擎一，支持多个码子轮询，如果你有多个账号的话（小心始皇封号哦~）
 deeplx:
@@ -14,30 +18,36 @@ deeplx:
     - "https://api.deeplx.org/可以用linux.do的码子3/translate"
 ### 翻译引擎二
 openai:
-  # 支持第三方中转站多个API地址和Key，轮询防止失效，需按顺序对应
-  base_urls:
-    - "https://api.xxx.com/v1"
-    - "https://中转APIURL地址/v1"
-    - "https://官方API——URL地址/v1"
-  api_keys:
-    - "sk-111111111111"
-    - "sk-222222222222"
-    - "sk-333333333333"
-  models:
-    - "gpt-4o"
-    - "deepseek-r1-0528"
-    - "gemini-2.0-flash"
-
-# 支持引擎故障转移，调用失效次数达到阈值后（留空默认3次）禁用，自动检测恢复
+  model_groups:
+### 具有相同模型的放一组，随机选择一组，优先使用第一个模型，依次轮询key
+### 第一组
+    - name: "newapi"
+      models: ["gpt-4o", "deepseek-r1-0528", "gemini-2.0-flash"]
+      endpoints:
+        - url: "https://api1.xxxxx.com/v1"
+          api_key: "sk-01xxxxxxxxxxxx9a"
+        - url: "https://api2.xxxxx.com/v1"
+          api_key: "sk-02xxxxxxxxxxxx9a"
+        - url: "https://api3.xxxxx.com/v1"
+          api_key: "sk-03xxxxxxxxxxxx9a"
+### 第二组
+    - name: "gemini-balance"
+      models: ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
+      endpoints:
+        - url: "https://api-gemini.xxxxx.yyy/v1"
+          api_key: "sk-xxxxxxxxxxxxxxxxxxdzZcw"
+        - url: "https://api-gemini.xxxxx.yyy/v1"
+          api_key: "sk-xxxxxxxxxxxxxxxxxxdzZcw"
+### 支持引擎故障转移，调用失效次数达到阈值后（留空默认3次）禁用，自动检测恢复
 deeplx_fail_threshold: 3
 openai_fail_threshold: 3
 
-# fasttext 语言识别配置
+### fasttext 语言识别配置,模型文件路径，脚本自动下载至脚本所在目录，约125MB
 fasttext:
   enabled: true
   confidence_threshold: 0.8
   fallback_enabled: true
-  model_path: "lid.176.bin"   # 模型文件路径，脚本自动下载至脚本所在目录，约125MB
+  model_path: "lid.176.bin"   
 
 # 语言检测增强配置
 lang_detect_short_text_unknown: true
@@ -53,7 +63,7 @@ lang_detect_proper_nouns:
 self_default_rule: "3"      # 如使用编号，等同于下面规则池编号，等价于 "zh|en,zh|en"
 other_default_rule: "2"     # 如使用编号，等同于下面规则池编号，等价于 "en,zh"
 
-# 可选规则池(编号一定是字符串)
+# 可选规则池(可自行添加，列示一下写法，添加规则的时候不允许使用*号)
 translate_rules:
   "1": "zh,en"                 # 中译英
   "2": "en,zh"                 # 英译中
@@ -63,7 +73,9 @@ translate_rules:
   "6": "fr|ru|en,en|zh"        # 分别按照有效规则计入，且已有重复规则合并
   "7": "*,en|zh"               # 删除规则时，可以删除匹配目标语言为en和zh的任意源语言组合
   "7": "en|zh,*"               # 删除规则时，可以删除匹配源语言为en和zh的任意目标语言组合
-# 以下主要用于排除十一bncr无界bot的时候忽略有关指令，可以自行添加补充
+
+  
+# 以下主要用于排除十一bncr无界bot的时候忽略有关指令，避免不需要的翻译，可以自行添加补充
 ignore_words:
   - "cd"
   - "60s"
