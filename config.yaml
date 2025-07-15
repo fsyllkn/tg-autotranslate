@@ -10,7 +10,7 @@ telegram:
 
 ### 默认翻译源，可填写 openai 或 deeplx
 default_translate_source: "openai"
-### 翻译引擎一，支持多个码子轮询，如果你有多个账号的话（小心始皇封号哦~）
+### 翻译引擎一，支持多个码子轮询，如果没有请留空或者注释，如果你有多个账号的话（小心始皇封号哦~）
 deeplx:
   base_urls:
     - "https://api.deeplx.org/可以用linux.do的码子1/translate"
@@ -20,7 +20,7 @@ deeplx:
 openai:
   model_groups:
 ### 具有相同模型的放一组，随机选择一组，优先使用第一个模型，依次轮询key
-### 第一组
+### 第一组，如果没有key，请留空或者注释
     - name: "newapi"
       models: ["gpt-4o", "deepseek-r1-0528", "gemini-2.0-flash"]
       endpoints:
@@ -30,7 +30,7 @@ openai:
           api_key: "sk-02xxxxxxxxxxxx9a"
         - url: "https://api3.xxxxx.com/v1"
           api_key: "sk-03xxxxxxxxxxxx9a"
-### 第二组
+### 第二组，如果没有key，请留空或者注释
     - name: "gemini-balance"
       models: ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
       endpoints:
