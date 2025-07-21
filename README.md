@@ -14,7 +14,7 @@ cd /root/tg-autotranslate
 ```
 git clone https://github.com/fsyllkn/tg-autotranslate.git
 ```
-#### 1.2编辑config.yaml配置文件，填写tg相关信息、deeplx的URL（支持linux.do的码子，格式见配置文件）、OpenAI的apikey和URL（支持中转key）
+#### 1.2编辑config.yaml配置文件，填写tg相关信息（需要自备api_hash、api_id，tg的userid）、deeplx的URL（支持linux.do的码子，格式见配置文件）、OpenAI的apikey和URL（支持中转key）
 ```
 nano config.yaml
 或者
