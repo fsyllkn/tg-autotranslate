@@ -112,7 +112,10 @@ systemctl start tg-autotranslate
 ```
 systemctl status tg-autotranslate
 ```
-
+或者使用命令查看详细日志
+```
+journalctl -u tg-autotranslate -f
+```
 
 
 
