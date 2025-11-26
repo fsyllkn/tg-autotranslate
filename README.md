@@ -20,18 +20,18 @@ nano config.yaml
 或者
 vi config.yaml
 ```
-### 附：配置文件说明（待详细说明。参考配置文件内注释）
+#### 附：配置文件说明（待详细说明。参考配置文件内注释）
 * 
 <details>
 <summary><code><strong>「 点击展开 查看配置文件 」</strong></code></summary>
 
 ****
-## 1.根据配置文件的描述填写即可
+##### 1.根据配置文件的描述填写即可
 
-### 1.1 tg的id、hash、api_id
-### 1.2 linux.do的码子、openai的的中转URL和apikey
-## 2、默认翻译规则填写（默认也可）
-### 2.1尽可能支持
+###### 1.1 tg的id、hash、api_id
+###### 1.2 linux.do的码子、openai的的中转URL和apikey
+#### 2、默认翻译规则填写（默认也可）
+###### 2.1尽可能支持
 </details>
 
 ****
